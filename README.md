@@ -37,3 +37,19 @@ Siga o passo a passo abaixo para criar e executar o programa no seu ambiente SAP
 
 2. O relatório exibirá de forma estruturada o status de cada nota do PIX, permitindo identificar de maneira ágil quais correções ainda precisam ser aplicadas via `SNOTE`.
 <img width="1919" height="1088" alt="Resultado da execução" src="https://github.com/user-attachments/assets/c82a428a-9c6e-4818-8d56-298042f2c165" />
+
+---
+
+## 📌 Considerações Finais e Próximos Passos
+
+1. **Encaminhamento ao Time de Basis:** Após executar o relatório e mapear as notas pendentes (status não aplicado ou parcial), exporte a lista e envie para a equipe de **BASIS / Infraestrutura SAP** para o download e aplicação sequencial via transação `SNOTE`.
+2. **Dependências de Notas:** Lembre-se de que algumas notas do ecossistema PIX possuem pré-requisitos de *Support Packages* (KBAs) ou outras notas de localização. A aplicação recomendada deve sempre respeitar a ordem do assistente da `SNOTE`.
+
+---
+
+## 🤝 Contato e Conexão
+
+Ficou com alguma dúvida sobre a execução do script ou sobre a aplicação do pacote de notas do PIX? Vamos trocar uma ideia!
+
+Conecte-se comigo no LinkedIn:  
+🔗 [Ítalo Lira - LinkedIn](https://www.linkedin.com/in/italo-lira-281028246/)
