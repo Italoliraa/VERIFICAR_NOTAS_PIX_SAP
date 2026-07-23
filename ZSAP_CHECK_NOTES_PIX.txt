@@ -1,0 +1,1300 @@
+*&---------------------------------------------------------------------*
+*& Report ZSAP_CHECK_NOTES_PIX
+*&
+*&---------------------------------------------------------------------*
+*&
+*&  Report for checking of an implementation state of the notes related
+*&  to PIX Payments in customer systems
+*&
+*&---------------------------------------------------------------------*
+REPORT ZSAP_CHECK_NOTES_PIX.
+
+TYPE-POOLS: abap, icon, bcwbn.
+
+CONSTANTS:
+  gc_version      TYPE string VALUE '10', "version of the 3127880
+  gc_version_date TYPE date   VALUE '20230127'.
+
+*----------------------------------------------------------------------*
+*       CLASS lcl_protocol DEFINITION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS lcl_protocol DEFINITION.
+
+  PUBLIC SECTION.
+    METHODS constructor.
+    METHODS add_header
+      IMPORTING iv_header TYPE string.
+    METHODS add_item
+      IMPORTING iv_item TYPE string
+                iv_msgty TYPE symsgty OPTIONAL.
+    METHODS add_instruction
+      IMPORTING iv_item TYPE string.
+    METHODS finish.
+
+  PRIVATE SECTION.
+    DATA mo_header_no TYPE int1 VALUE 0.
+
+ENDCLASS.                    "lcl_protocol DEFINITION
+
+*----------------------------------------------------------------------*
+*       CLASS lcx_message DEFINITION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS lcx_message DEFINITION INHERITING FROM cx_static_check.
+
+  PUBLIC SECTION.
+    INTERFACES if_t100_message.
+
+    CONSTANTS:
+      BEGIN OF gc_message,
+        msgid TYPE symsgid VALUE '01',
+        msgno TYPE symsgno VALUE '666',
+      END OF gc_message.
+
+    DATA:
+      mv_msgv1 TYPE  symsgv,
+      mv_msgv2 TYPE  symsgv,
+      mv_msgv3 TYPE  symsgv,
+      mv_msgv4 TYPE  symsgv,
+      severity TYPE  symsgty VALUE 'W'.
+    CLASS-METHODS create_message
+      IMPORTING
+                iv_msgty        TYPE  symsgty OPTIONAL
+                iv_msgv1        TYPE  string OPTIONAL
+                iv_msgv2        TYPE  string OPTIONAL
+                iv_msgv3        TYPE  string OPTIONAL
+                iv_msgv4        TYPE  string OPTIONAL
+      RETURNING value(rx_error) TYPE REF TO lcx_message.
+
+    CLASS-METHODS create_message_sy
+      IMPORTING
+                iv_msgty        TYPE  symsgty OPTIONAL
+                iv_msgv1        TYPE  symsgv OPTIONAL
+                iv_msgv2        TYPE  symsgv OPTIONAL
+                iv_msgv3        TYPE  symsgv OPTIONAL
+                iv_msgv4        TYPE  symsgv OPTIONAL
+      RETURNING value(rx_error) TYPE REF TO lcx_message.
+
+    METHODS constructor
+      IMPORTING
+        i_textid   LIKE if_t100_message~t100key OPTIONAL
+        i_previous LIKE previous OPTIONAL
+        i_severity TYPE symsgty OPTIONAL.
+
+
+    METHODS output
+    IMPORTING
+      io_protocol TYPE REF TO lcl_protocol.
+  PRIVATE SECTION.
+
+ENDCLASS.                    "lcx_message DEFINITION
+*----------------------------------------------------------------------*
+*       CLASS lcl_processor DEFINITION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS lcl_processor DEFINITION.
+  PUBLIC SECTION.
+
+    TYPES:
+      t_note_seq  TYPE i,
+      t_obj_type  TYPE string,
+      tt_cvers    TYPE STANDARD TABLE OF cvers WITH NON-UNIQUE KEY component,
+
+      BEGIN OF t_note,
+        note_seq    TYPE t_note_seq,
+        note_no     TYPE string,
+        note_vr     TYPE cwbntvers,
+        obj_check   TYPE t_obj_type,
+        objname     TYPE string,
+        objname2    TYPE string,
+        objname3    TYPE string,
+        objname4    TYPE string,
+        repid       TYPE string,
+        deimpl      TYPE abap_bool,         "Obsolete
+        cvers_min   TYPE tt_cvers,
+        cvers_max   TYPE tt_cvers,
+      END OF t_note,
+
+      tt_note     TYPE SORTED TABLE OF t_note WITH NON-UNIQUE KEY note_seq.
+
+
+    CONSTANTS:
+      BEGIN OF gc_note_seq,
+        business_func TYPE t_note_seq VALUE 025, "business function
+        ddic          TYPE t_note_seq VALUE 100, "DDIC
+        exception     TYPE t_note_seq VALUE 200, "exception class
+        snote         TYPE t_note_seq VALUE 300, "SNOTE
+        prereq        TYPE t_note_seq VALUE 310, "Recommended prerequisite notes for PIX
+        pix           TYPE t_note_seq VALUE 320, "PIX notes
+      END OF gc_note_seq.
+
+    CONSTANTS:
+      BEGIN OF gc_obj_type,
+*       ddic_repid  TYPE t_obj_type VALUE 'DDIC_REPID',
+*       doma        TYPE t_obj_type VALUE 'DOMA',
+        field         TYPE t_obj_type VALUE 'FIELD',
+        prog_text     TYPE t_obj_type VALUE 'REPT',
+        message       TYPE t_obj_type VALUE 'MESSAGE',
+        tabu          TYPE t_obj_type VALUE 'TABU',
+        business_func TYPE t_obj_type VALUE 'BF',
+      END OF gc_obj_type.
+
+    METHODS constructor
+      IMPORTING iv_version TYPE string
+                iv_date    TYPE date.
+
+    METHODS process
+      IMPORTING it_notes          TYPE tt_note
+                iv_note_disp_lvl  TYPE i DEFAULT 0
+                iv_note_disp_help TYPE abap_bool DEFAULT abap_false.
+
+  PRIVATE SECTION.
+
+    DATA:
+      mo_message        TYPE REF TO lcx_message,
+      mo_protocol       TYPE REF TO lcl_protocol,
+      mv_note_disp_lvl  TYPE i.
+
+    METHODS handle_note_seq
+      IMPORTING iv_note_seq TYPE t_note_seq
+      RAISING   lcx_message.
+
+    METHODS check_note
+      IMPORTING iv_note      TYPE string
+                iv_vers      TYPE cwbntvers
+                iv_cvers_min TYPE tt_cvers OPTIONAL
+                iv_cvers_max TYPE tt_cvers OPTIONAL
+                iv_deimpl    TYPE abap_bool
+      RETURNING value(state) TYPE char1
+      RAISING   lcx_message.
+
+    METHODS check_note_components
+      IMPORTING iv_note      TYPE string
+                iv_cvers_min TYPE tt_cvers
+                iv_cvers_max TYPE tt_cvers
+      RETURNING VALUE(rv_relevant) TYPE abap_bool.
+
+    METHODS check_note_help.
+
+    METHODS check_report
+      IMPORTING is_note     TYPE t_note
+      RETURNING value(state) TYPE char1
+      RAISING   lcx_message.
+
+    METHODS check_struct_field
+      IMPORTING is_note TYPE t_note
+      RETURNING value(state) TYPE char1
+      RAISING   lcx_message.
+
+    METHODS check_message
+      IMPORTING is_note TYPE t_note
+      RETURNING value(state) TYPE char1
+      RAISING   lcx_message.
+
+    METHODS check_tabu
+      IMPORTING is_note TYPE t_note
+      RETURNING value(state) TYPE char1
+      RAISING   lcx_message.
+
+    METHODS check_prog_text
+      IMPORTING is_note TYPE t_note
+      RETURNING value(state) TYPE char1
+      RAISING   lcx_message.
+    METHODS check_bf
+      IMPORTING is_note TYPE t_note
+      RETURNING value(state) TYPE char1
+      RAISING   lcx_message.
+
+ENDCLASS.                    "lcl_processor DEFINITION
+
+
+*----------------------------------------------------------------------*
+*       CLASS lcl_protocol IMPLEMENTATION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS lcl_protocol IMPLEMENTATION.
+  METHOD constructor.
+    NEW-PAGE WITH-TITLE LINE-SIZE 132.
+
+
+  ENDMETHOD.                    "constructor
+  METHOD add_header.
+    ADD 1 TO mo_header_no.
+    ULINE.
+    FORMAT COLOR COL_POSITIVE INTENSIFIED OFF.
+    WRITE: / sy-vline,
+             mo_header_no LEFT-JUSTIFIED,
+             AT 5 iv_header,
+             AT 132 sy-vline.
+    FORMAT COLOR COL_NORMAL INTENSIFIED OFF.
+    ULINE.
+  ENDMETHOD.                    "add_header
+  METHOD add_item.
+    DATA:
+      lv_icon_text(4)  TYPE c.
+
+    CASE iv_msgty.
+      WHEN 'W'.
+        WRITE icon_led_yellow AS ICON TO lv_icon_text.
+      WHEN 'E'.
+        WRITE icon_led_red AS ICON TO lv_icon_text.
+      WHEN 'S'.
+        WRITE icon_led_green AS ICON TO lv_icon_text.
+      WHEN 'I'.
+        WRITE icon_led_green AS ICON TO lv_icon_text.
+    ENDCASE.
+
+    FORMAT COLOR COL_NORMAL INTENSIFIED OFF.
+    WRITE:    /
+              sy-vline,
+              lv_icon_text AS ICON,
+              iv_item,
+              AT 132 sy-vline.
+    FORMAT COLOR COL_NORMAL INTENSIFIED OFF.
+  ENDMETHOD.                    "add_item
+  METHOD add_instruction.
+    FORMAT COLOR COL_HEADING INTENSIFIED ON.
+    WRITE:    /
+              sy-vline,
+              iv_item,
+              AT 132 sy-vline.
+    FORMAT COLOR COL_NORMAL INTENSIFIED OFF.
+  ENDMETHOD.                    "add_instruction
+  METHOD finish.
+    ULINE.
+  ENDMETHOD.                    "finish
+
+ENDCLASS.                    "lcl_protocol IMPLEMENTATION
+
+*----------------------------------------------------------------------*
+*       CLASS lcl_processor IMPLEMENTATION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS lcl_processor IMPLEMENTATION.
+  METHOD constructor.
+    DATA:
+      l_title TYPE string.
+
+    CREATE OBJECT mo_protocol.
+
+    CONCATENATE
+      'Report Version: '
+      iv_version
+      ' ('
+      iv_date+6(2)
+      '.'
+      iv_date+4(2)
+      '.'
+      iv_date+0(4)
+      ')'
+      INTO l_title RESPECTING BLANKS.
+    mo_protocol->add_header( l_title ).
+  ENDMETHOD.                    "constructor
+  METHOD process.
+    DATA:
+      lo_exception TYPE REF TO lcx_message,
+      lv_seq_error TYPE xfeld.
+
+    FIELD-SYMBOLS: <ls_note> TYPE t_note.
+
+    me->mv_note_disp_lvl = iv_note_disp_lvl.
+
+    IF iv_note_disp_help EQ abap_true.
+      check_note_help( ).
+    ENDIF.
+
+    LOOP AT it_notes ASSIGNING <ls_note>.
+      TRY.
+          AT NEW note_seq.
+            CLEAR lv_seq_error.
+            handle_note_seq( <ls_note>-note_seq ).
+          ENDAT.
+
+*         basic note check
+          check_note( iv_note       = <ls_note>-note_no
+                      iv_vers       = <ls_note>-note_vr
+                      iv_deimpl     = <ls_note>-deimpl
+                      iv_cvers_min  = <ls_note>-cvers_min
+                      iv_cvers_max  = <ls_note>-cvers_max
+                    ).
+*         UDO checks
+          IF <ls_note>-obj_check IS NOT INITIAL.
+            CASE <ls_note>-obj_check.
+              WHEN gc_obj_type-field.
+                check_struct_field( <ls_note> ).
+              WHEN gc_obj_type-prog_text.
+                check_prog_text( <ls_note> ).
+              WHEN gc_obj_type-message.
+                check_message( <ls_note> ).
+              WHEN gc_obj_type-tabu.
+                check_tabu( <ls_note> ).
+              WHEN gc_obj_type-business_func.
+                check_bf(  <ls_note> ).
+              WHEN OTHERS.
+                lo_exception = lcx_message=>create_message(
+                  iv_msgv1 =  'Internal error. '
+                  iv_msgv2 = <ls_note>-obj_check
+                  iv_msgv3 = ' is not expected' ).
+                RAISE EXCEPTION lo_exception.
+            ENDCASE.
+*           Everything is fine, report was executed
+            lo_exception = lcx_message=>create_message(
+              iv_msgty = 'I'
+              iv_msgv1 =  'SAP Note'
+              iv_msgv2 = <ls_note>-note_no
+              iv_msgv3 = 'implemented, report executed:'
+              iv_msgv4 = <ls_note>-repid  ).
+            RAISE EXCEPTION lo_exception.
+          ENDIF.
+          AT END OF note_seq.
+            IF lv_seq_error IS INITIAL.
+*       Everything is fine, all notes were implemented
+              lo_exception = lcx_message=>create_message(
+                iv_msgty = 'I'
+                iv_msgv1 =  'All notes were implemented' ).
+              RAISE EXCEPTION lo_exception.
+            ENDIF.
+          ENDAT.
+        CATCH lcx_message INTO lo_exception.
+          lo_exception->output( mo_protocol ).
+          IF lo_exception->severity NE 'I'.
+            lv_seq_error = abap_true.
+          ENDIF.
+          CONTINUE.
+      ENDTRY.
+    ENDLOOP.
+    mo_protocol->finish( ).
+  ENDMETHOD.                    "process
+  METHOD handle_note_seq.
+    ULINE.
+    FORMAT COLOR COL_POSITIVE INTENSIFIED OFF.
+    CASE iv_note_seq.
+      WHEN gc_note_seq-business_func.
+        mo_protocol->add_header( 'Necessary business functions' ).
+      WHEN gc_note_seq-ddic.
+        mo_protocol->add_header( 'Notes delivering reports for changes in Data Dictionary' ).
+        mo_protocol->add_instruction( '1. Implement the note.' ).
+        mo_protocol->add_instruction( '2. Start the delivered report in SA38 and follow the instructions' ).
+        mo_protocol->add_instruction(
+        '3. The SAP Notes and/or the reports are part of manual steps in subsequent notes. Use the list output to check the ').
+        mo_protocol->add_instruction( 'succesful execution of the corresponding manual steps.' ).
+      WHEN gc_note_seq-exception.
+        mo_protocol->add_header( 'Notes delivering class based exceptions in Transaction Manager' ).
+        mo_protocol->add_instruction( '1. Implement the individual notes separately.' ).
+        mo_protocol->add_instruction(
+        '2. If you face syntax error "Method &1 wasn''t declared in class CX_FTR_ROOT", open class CX_FTR_ROOT in SE24 in change mode and').
+        mo_protocol->add_instruction( 'choose from menu Utilities->Clean Up->Method includes' ).
+      WHEN gc_note_seq-snote.
+        mo_protocol->add_header( 'Notes delivering changes in Note Assistant (SNOTE)').
+      WHEN gc_note_seq-prereq.
+        mo_protocol->add_header( 'Recommended prerequisite notes for the PIX solution (to be implemented)').
+      WHEN gc_note_seq-pix.
+        mo_protocol->add_header( 'Notes delivering changes in PIX (to be implemented)').
+      WHEN OTHERS.
+        DATA lv_text TYPE string.
+        lv_text = iv_note_seq.
+        mo_message = lcx_message=>create_message(
+          iv_msgv1 =  'Internal error. '
+          iv_msgv2 = lv_text
+          iv_msgv3 = ' is not expected' ).
+        RAISE EXCEPTION mo_message.
+    ENDCASE.
+
+  ENDMETHOD.                    "handle_note_seq
+  METHOD check_report.
+    "Main check: Last changed by SAP -> Report came via SP / Upgrade
+    "==> no execution anymore.
+    DATA ls_d010sinf TYPE d010sinf.
+
+    SELECT SINGLE prog FROM d010sinf INTO ls_d010sinf
+                      WHERE prog   EQ is_note-repid.
+
+    IF sy-subrc IS NOT INITIAL.
+      mo_message = lcx_message=>create_message(
+        iv_msgv1 =  'SAP Note'
+        iv_msgv2 = is_note-note_no
+        iv_msgv3 = 'not fully implemented, missing report'
+        iv_msgv4 = is_note-repid ).
+    ELSEIF ls_d010sinf-unam NE 'SAP' AND ls_d010sinf-cnam NE 'SAP'. "else 'The necessary changes already came' 'via support package.' 'Report execution not required anymore.'
+      mo_message = lcx_message=>create_message(
+      iv_msgv1 =  'Execute the Report '
+      iv_msgv2 = is_note-repid
+      iv_msgv3 = ' according the instructions below' ).
+      RAISE EXCEPTION mo_message.
+    ENDIF.
+
+  ENDMETHOD.                    "check_report
+  METHOD check_bf.
+    DATA:
+      lv_tadir         TYPE tadir,
+      lv_bf            TYPE sfw_bf.
+
+*   check business function (also tadir because of inconsistency in DIMP area)
+    SELECT SINGLE * FROM tadir INTO lv_tadir
+      WHERE pgmid    = 'R3TR'
+        AND object   = 'SFBF'
+        AND obj_name = is_note-objname.
+    IF sy-subrc <> 0.
+      mo_message = lcx_message=>create_message(
+        iv_msgty = 'E'
+        iv_msgv1 =  'Business function'
+        iv_msgv2 = is_note-objname
+        iv_msgv3 = 'doesn''t exist. Check your release.' ).
+      RAISE EXCEPTION mo_message.
+    ENDIF.
+    SELECT SINGLE * FROM sfw_bf INTO lv_bf
+      WHERE bfunction = is_note-objname
+        AND version   = cl_abap_switch_state_admin=>c_active.
+    IF sy-subrc <> 0.
+      mo_message = lcx_message=>create_message(
+        iv_msgty = 'E'
+        iv_msgv1 =  'Business function'
+        iv_msgv2 = is_note-objname
+        iv_msgv3 = 'isn''t activated' ).
+      RAISE EXCEPTION mo_message.
+    ELSE.
+      mo_message = lcx_message=>create_message(
+        iv_msgty = 'I'
+        iv_msgv1 =  'Business function'
+        iv_msgv2 = is_note-objname
+        iv_msgv3 = 'is activated' ).
+      RAISE EXCEPTION mo_message.
+    ENDIF.
+  ENDMETHOD.                    "check_bf
+  METHOD check_note.
+    DATA: l_status      TYPE c,
+          l_text1       TYPE string,
+          l_text2       TYPE string,
+          l_text3       TYPE string,
+          l_text4       TYPE string,
+          ls_note       TYPE bcwbn_note,
+          l_valid       TYPE bcwbn_bool,
+          l_symsgty     TYPE symsgty,
+          ls_cvers      TYPE cvers,
+          ls_cvers_req  TYPE cvers,
+          lt_cvers      TYPE tt_cvers,
+          lv_relevant   TYPE abap_bool.
+
+    CHECK iv_note IS NOT INITIAL.
+
+    ls_note-key-numm   = iv_note.
+
+    IF iv_cvers_min[] IS NOT INITIAL OR
+       iv_cvers_max[] IS NOT INITIAL.
+      lv_relevant = check_note_components(
+                             iv_note      = iv_note
+                             iv_cvers_min = iv_cvers_min
+                             iv_cvers_max = iv_cvers_max ).
+      IF lv_relevant EQ abap_false.
+        RETURN.
+      ENDIF.
+    ENDIF.
+
+    CALL FUNCTION 'SCWB_NOTE_READ'
+      EXPORTING
+        iv_read_attributes          = 'X'
+        iv_read_customer_attributes = 'X'
+        iv_read_corr_instructions   = 'X'
+      CHANGING
+        cs_note                     = ls_note
+      EXCEPTIONS
+        note_not_found              = 1
+        language_not_found          = 2
+        unreadable_text_format      = 3
+        corr_instruction_not_found  = 4
+        OTHERS                      = 5.
+    IF sy-subrc NE 0.
+      IF iv_deimpl IS INITIAL.
+        mo_message = lcx_message=>create_message(
+          iv_msgv1 = 'SAP Note'
+          iv_msgv2 = iv_note
+          iv_msgv3 = 'has not been downloaded yet,'
+          iv_msgv4 = 'download the note' ).
+      ELSE.
+         mo_message = lcx_message=>create_message(
+          iv_msgv1 = 'SAP Note'
+          iv_msgv2 = iv_note
+          iv_msgv3 = 'has not been downloaded yet'
+          iv_msgty = 'I' ).
+      ENDIF.
+      RAISE EXCEPTION mo_message.
+    ENDIF.
+
+    IF iv_deimpl EQ abap_true.
+*     Notes to be deimplemented
+
+      CASE ls_note-customer_attributes-prstatus.
+        WHEN 'E' OR 'U' OR 'V'.
+          l_symsgty = 'E'.
+        WHEN '-'.
+          RETURN.
+        WHEN OTHERS.
+          l_symsgty = 'I'.
+      ENDCASE.
+
+      CONCATENATE
+        'SAP Note '
+        iv_note
+        INTO l_text1 RESPECTING BLANKS.
+
+      CALL FUNCTION 'CONVERSION_EXIT_PSTAT_OUTPUT'
+        EXPORTING
+          input  = ls_note-customer_attributes-prstatus
+        IMPORTING
+          output = l_text2.
+      TRANSLATE l_text3 TO LOWER CASE.
+
+      CALL FUNCTION 'CONVERSION_EXIT_CWBNT_OUTPUT'
+        EXPORTING
+          input  = ls_note-customer_attributes-ntstatus
+        IMPORTING
+          output = l_text3.
+      CONCATENATE
+        ', Processing status: '
+        l_text3
+         INTO l_text3 RESPECTING BLANKS.
+
+      mo_message = lcx_message=>create_message(
+        iv_msgv1 = l_text1
+        iv_msgv2 = l_text2
+        iv_msgv3 = l_text3
+        iv_msgv4 = l_text4
+        iv_msgty = l_symsgty ).
+      RAISE EXCEPTION mo_message.
+
+    ELSE.
+*     Notes to be implemented
+
+      CASE ls_note-customer_attributes-prstatus.
+
+*       Completely implemented (E)
+*       - Corrections in the SAP Note have been implemented completely in your system.
+        WHEN 'E'.
+
+*         Check note version
+          IF ls_note-key-versno GE iv_vers.
+            CONCATENATE
+              'SAP Note '
+              iv_note
+              ' version '
+              ls_note-key-versno
+              ' completely implemented'
+              INTO l_text1 RESPECTING BLANKS.
+            mo_protocol->add_item( iv_item = l_text1
+                                   iv_msgty = 'I' ).
+          ELSE.
+            CONCATENATE
+              'implemented, but version '
+              ls_note-key-versno
+              INTO l_text3 RESPECTING BLANKS.
+            CONCATENATE
+              'is too old, expected is '
+              iv_vers
+              INTO l_text4 RESPECTING BLANKS.
+            mo_message = lcx_message=>create_message(
+              iv_msgv1 =  'SAP Note'
+              iv_msgv2 = iv_note
+              iv_msgv3 = l_text3
+              iv_msgv4 = l_text4
+              iv_msgty = 'E').
+            RAISE EXCEPTION mo_message.
+          ENDIF.
+
+*       Obsolete (O)
+*       - After you implemented the corrections in the Note, you imported a Support Package that also contains these corrections.
+        WHEN 'O'.
+          IF me->mv_note_disp_lvl GE 1.
+            CONCATENATE
+              'version '
+              ls_note-key-versno
+              INTO l_text3 RESPECTING BLANKS.
+            mo_message = lcx_message=>create_message(
+              iv_msgv1 =  'SAP Note'
+              iv_msgv2 = iv_note
+              iv_msgv3 = l_text3
+              iv_msgv4 = 'is obsolete (correction already delivered in SP)'
+              iv_msgty = 'I' ).
+            RAISE EXCEPTION mo_message.
+          ENDIF.
+
+*       Cannot be implemented (-)
+*       - Note does not contain any correction instructions that you can implement in your system.
+        WHEN '-'.
+          IF me->mv_note_disp_lvl GE 1.
+            CONCATENATE
+              'version '
+              ls_note-key-versno
+              INTO l_text3 RESPECTING BLANKS.
+            mo_message = lcx_message=>create_message(
+              iv_msgv1 =  'SAP Note'
+              iv_msgv2 = iv_note
+              iv_msgv3 = l_text3
+              iv_msgv4 = 'cannot be implemented (no relevant CI)'
+              iv_msgty = 'I' ).
+            RAISE EXCEPTION mo_message.
+          ENDIF.
+
+*       Can be implemented (N)            - Note contains correction instructions that you may need to implement in your system
+*       Incompletely implemented (U)      - Not all relevant correction instructions have been implemented or some have been implemented only in part
+*       Obsolete version implemented (V)  - SAP has corrected an SAP Note that contained errors
+        WHEN 'N' OR 'U' OR 'V'.
+
+          CONCATENATE
+            'SAP Note '
+            iv_note
+            INTO l_text1 RESPECTING BLANKS.
+
+          CALL FUNCTION 'CONVERSION_EXIT_PSTAT_OUTPUT'
+            EXPORTING
+              input  = ls_note-customer_attributes-prstatus
+            IMPORTING
+              output = l_text2.
+          TRANSLATE l_text3 TO LOWER CASE.
+
+          CALL FUNCTION 'CONVERSION_EXIT_CWBNT_OUTPUT'
+            EXPORTING
+              input  = ls_note-customer_attributes-ntstatus
+            IMPORTING
+              output = l_text3.
+          CONCATENATE
+            ', Processing status: '
+            l_text3
+             INTO l_text3 RESPECTING BLANKS.
+
+
+          IF ls_note-key-versno GE iv_vers.
+            l_symsgty = 'W'.
+            CLEAR l_text4.
+          ELSE.
+            l_symsgty = 'E'.
+            CONCATENATE
+              ', but obsolete version '
+              ls_note-key-versno
+              ' downloaded, exp: '
+              iv_vers
+              INTO l_text4 RESPECTING BLANKS.
+          ENDIF.
+
+          mo_message = lcx_message=>create_message(
+            iv_msgv1 = l_text1
+            iv_msgv2 = l_text2
+            iv_msgv3 = l_text3
+            iv_msgv4 = l_text4
+            iv_msgty = l_symsgty ).
+          RAISE EXCEPTION mo_message.
+
+        WHEN OTHERS. "okay
+
+*  ------
+          FIELD-SYMBOLS: <ls_corr> TYPE bcwbn_corr_instruction.
+          LOOP AT ls_note-corr_instructions ASSIGNING <ls_corr>.
+            CALL FUNCTION 'SCWB_CINST_CHECK_VALID'
+              IMPORTING
+                ev_valid                   = l_valid
+              CHANGING
+                cs_corr_instruction        = <ls_corr>
+              EXCEPTIONS
+                corr_inst_not_found        = 1
+                inconsistent_delivery_data = 2
+                undefined                  = 3
+                OTHERS                     = 4.
+            IF sy-subrc <> 0.
+              mo_message = lcx_message=>create_message_sy(
+                iv_msgv1 =  sy-msgv1
+                iv_msgv2 = sy-msgv2
+                iv_msgv3 = sy-msgv3
+                iv_msgv4 = sy-msgv4 ).
+              RAISE EXCEPTION mo_message.
+            ENDIF.
+            IF NOT l_valid IS INITIAL.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+          IF l_valid IS INITIAL.
+            MESSAGE e666(01) WITH 'Manual changes cannot be applied;' 'Correction instruction invalid' 'for current patch level' INTO sy-lisel. "#EC *
+            mo_message = lcx_message=>create_message(
+              iv_msgv1 = 'SAP Note'
+              iv_msgv2 = iv_note
+              iv_msgv3 = 'has invalid correction instructions.'
+              iv_msgv4 = ' Check if you have the newest version of the note' ).
+            RAISE EXCEPTION mo_message.
+          ENDIF.
+      ENDCASE.
+
+    ENDIF.
+
+  ENDMETHOD.                    "check_note
+
+  METHOD check_note_components.
+    DATA:
+      l_text4       TYPE string,
+      ls_note       TYPE bcwbn_note,
+      ls_cvers      TYPE cvers,
+      ls_cvers_req  TYPE cvers,
+      lt_cvers      TYPE tt_cvers.
+
+    rv_relevant = abap_true.
+
+    CALL FUNCTION 'SCSI_GET_SYSTEM_INFO'
+     TABLES
+       et_cvers = lt_cvers.
+
+*   Check required minimum
+    LOOP AT iv_cvers_min INTO ls_cvers_req.
+      READ TABLE lt_cvers INTO ls_cvers
+        WITH KEY component = ls_cvers_req-component.
+      IF sy-subrc EQ 0.
+        IF ls_cvers_req-release     GT ls_cvers-release OR
+           ( ls_cvers_req-extrelease  IS NOT INITIAL AND
+             ls_cvers_req-extrelease  GT ls_cvers-extrelease
+           ).
+*         Note is not relevant for this Component/Release/SP
+          rv_relevant = abap_false.
+          RETURN.
+        ENDIF.
+      ELSE.
+        l_text4 = ls_cvers_req-component.
+        mo_message = lcx_message=>create_message(
+        iv_msgv1 = 'SAP Note'
+        iv_msgv2 = iv_note
+        iv_msgv3 = 'requires missing component'
+        iv_msgv4 = l_text4
+        iv_msgty = 'E' ).
+        RAISE EXCEPTION mo_message.
+      ENDIF.
+    ENDLOOP.
+
+*   Check required maximum
+    LOOP AT iv_cvers_max INTO ls_cvers_req.
+      READ TABLE lt_cvers INTO ls_cvers
+        WITH KEY component = ls_cvers_req-component.
+      IF sy-subrc EQ 0.
+        IF ls_cvers_req-release     LT ls_cvers-release OR
+           ( ls_cvers_req-extrelease  IS NOT INITIAL AND
+             ls_cvers_req-extrelease  LT ls_cvers-extrelease
+           ).
+*         Note is not relevant for this Component/Release/SP
+          rv_relevant = abap_false.
+          RETURN.
+        ENDIF.
+      ELSE.
+        l_text4 = ls_cvers_req-component.
+        mo_message = lcx_message=>create_message(
+        iv_msgv1 = 'SAP Note'
+        iv_msgv2 = iv_note
+        iv_msgv3 = 'requires missing component'
+        iv_msgv4 = l_text4
+        iv_msgty = 'E' ).
+        RAISE EXCEPTION mo_message.
+      ENDIF.
+    ENDLOOP.
+
+  ENDMETHOD.                    "check_note_components
+
+  METHOD check_note_help.
+    mo_protocol->add_instruction('IMPLEMENTATION STATUS DESCRIPTION:').
+    mo_protocol->add_instruction('- Completely implemented:       The corrections in the SAP Note have been implemented completely in the system. ').
+    mo_protocol->add_instruction('- Incompletely implemented:     Not all the relevant correction instructions have been implemented or some have been implemented').
+    mo_protocol->add_instruction('                                only in part.').
+    mo_protocol->add_instruction('- Can be implemented:           The Note contains correction instructions that might be needed to be implemented in the system.').
+    mo_protocol->add_instruction('- Obsolete version implemented: SAP has corrected a Note that contained errors. A newer version of the Note is ready.').
+    IF me->mv_note_disp_lvl GE 1.
+      mo_protocol->add_instruction('- Cannot be implemented:        The Note does not contain any correction instructions that can be implemented in the system.').
+      mo_protocol->add_instruction('- Obsolete:                     After an implementation of the corrections in the Note, a Support Package was imported that also').
+      mo_protocol->add_instruction('                                contains these corrections.').
+    ENDIF.
+  ENDMETHOD.                    "check_note_help
+
+  METHOD check_struct_field.
+    DATA:
+      lo_struct_descr   TYPE REF TO cl_abap_structdescr,
+      lt_components     TYPE abap_component_tab.
+
+    FIELD-SYMBOLS:
+      <ls_component>    TYPE abap_componentdescr.
+
+
+    lo_struct_descr ?= cl_abap_structdescr=>describe_by_name( is_note-objname ).
+    lt_components = lo_struct_descr->get_components( ).
+    READ TABLE lt_components WITH TABLE KEY
+      name = is_note-objname2
+      TRANSPORTING NO FIELDS.
+
+    IF sy-subrc IS NOT INITIAL.
+      check_report( is_note ).
+    ENDIF.
+  ENDMETHOD.                    "check_struct_field
+
+  METHOD check_prog_text.
+
+    DATA: lt_textpool TYPE TABLE OF textpool ,
+         lv_progname  TYPE progname,
+         lv_langu     TYPE sylangu VALUE 'E' .  "Default EN
+
+    lv_progname = is_note-objname.
+    IF is_note-objname2 IS NOT INITIAL.
+      lv_langu = is_note-objname2.
+    ENDIF.
+
+    READ TEXTPOOL lv_progname INTO lt_textpool LANGUAGE lv_langu.
+    READ TABLE lt_textpool
+      WITH KEY id  = is_note-objname3
+               key = is_note-objname4
+      TRANSPORTING NO FIELDS.
+    IF sy-subrc IS NOT INITIAL.
+      check_report( is_note ).
+    ENDIF.
+  ENDMETHOD.                    "check_prog_text
+  METHOD check_message.
+
+    DATA: lv_text TYPE natxt,
+         lv_langu     TYPE sylangu VALUE 'E' .  "Default EN
+
+    IF is_note-objname3 IS NOT INITIAL.
+      lv_langu = is_note-objname3.
+    ENDIF.
+
+    SELECT SINGLE text FROM t100 INTO lv_text
+      WHERE sprsl = lv_langu
+        AND arbgb = is_note-objname
+        AND msgnr = is_note-objname2.
+
+    IF sy-subrc IS NOT INITIAL.
+      check_report( is_note ).
+    ENDIF.
+
+    IF is_note-objname4 IS NOT INITIAL AND lv_text NE is_note-objname4.
+      check_report( is_note ).
+    ENDIF.
+
+  ENDMETHOD.                    "check_prog_text
+  METHOD check_tabu.
+
+    DATA: lv_count TYPE i.
+
+
+    SELECT COUNT(*) FROM (is_note-objname) INTO lv_count
+      WHERE (is_note-objname2).
+
+    IF sy-subrc IS NOT INITIAL OR lv_count NE is_note-objname3 .
+      check_report( is_note ).
+    ENDIF.
+
+  ENDMETHOD.                    "check_tabu
+
+ENDCLASS.                    "lcl_processor IMPLEMENTATION
+
+*----------------------------------------------------------------------*
+*       CLASS lcx_message IMPLEMENTATION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS lcx_message IMPLEMENTATION.
+  METHOD create_message.
+    DATA:
+  ls_textid   LIKE if_t100_message~t100key.
+
+    ls_textid-msgid = gc_message-msgid.
+    ls_textid-msgno = gc_message-msgno.
+    ls_textid-attr1 = 'MV_MSGV1'.
+    ls_textid-attr2 = 'MV_MSGV2'.
+    ls_textid-attr3 = 'MV_MSGV3'.
+    ls_textid-attr4 = 'MV_MSGV4'.
+
+    CREATE OBJECT rx_error
+      EXPORTING
+        i_textid   = ls_textid
+        i_severity = iv_msgty.
+
+    rx_error->mv_msgv1 = iv_msgv1.
+    rx_error->mv_msgv2 = iv_msgv2.
+    rx_error->mv_msgv3 = iv_msgv3.
+    rx_error->mv_msgv4 = iv_msgv4.
+  ENDMETHOD.                    "create_message
+  METHOD create_message_sy.
+    DATA:
+  ls_textid   LIKE if_t100_message~t100key.
+
+    ls_textid-msgid = gc_message-msgid.
+    ls_textid-msgno = gc_message-msgno.
+    ls_textid-attr1 = 'MV_MSGV1'.
+    ls_textid-attr2 = 'MV_MSGV2'.
+    ls_textid-attr3 = 'MV_MSGV3'.
+    ls_textid-attr4 = 'MV_MSGV4'.
+
+    CREATE OBJECT rx_error
+      EXPORTING
+        i_textid   = ls_textid
+        i_severity = iv_msgty.
+
+    rx_error->mv_msgv1 = iv_msgv1.
+    rx_error->mv_msgv2 = iv_msgv2.
+    rx_error->mv_msgv3 = iv_msgv3.
+    rx_error->mv_msgv4 = iv_msgv4.
+  ENDMETHOD.                    "create_message_sy
+  METHOD constructor.
+    CALL METHOD super->constructor
+      EXPORTING
+        previous = i_previous.
+
+    CLEAR me->textid.
+    IF i_textid IS INITIAL.
+      if_t100_message~t100key = if_t100_message=>default_textid.
+    ELSE.
+      if_t100_message~t100key = i_textid.
+    ENDIF.
+
+    IF i_severity IS INITIAL.
+      severity = 'E'.
+    ELSE.
+      severity = i_severity.
+    ENDIF.
+
+
+  ENDMETHOD.                    "constructor
+  METHOD output.
+    DATA l_text TYPE string.
+    MESSAGE ID if_t100_message~t100key-msgid
+            TYPE severity
+            NUMBER if_t100_message~t100key-msgno
+            WITH mv_msgv1 mv_msgv2 mv_msgv3 mv_msgv4
+            INTO l_text.
+
+    IF io_protocol IS NOT INITIAL.
+      io_protocol->add_item( iv_item = l_text iv_msgty = severity ).
+    ELSE.
+      WRITE:/ l_text.
+    ENDIF.
+  ENDMETHOD.                    "flush
+ENDCLASS.                    "lcx_message IMPLEMENTATION
+
+*&---------------------------------------------------------------------*
+*&      Form  add_ddic_note_field
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->UV_NOTE_NO    text
+*      -->UV_TABNAME    text
+*      -->UV_FIELDNAME  text
+*      -->UV_REPID      text
+*      -->CT_NOTES      text
+*----------------------------------------------------------------------*
+FORM add_ddic_note_field
+  USING
+    uv_note_no   TYPE string
+    uv_tabname   TYPE string
+    uv_fieldname TYPE string
+    uv_repid     TYPE string
+  CHANGING ct_notes TYPE lcl_processor=>tt_note.
+
+  DATA ls_note TYPE lcl_processor=>t_note.
+
+  ls_note-note_seq = lcl_processor=>gc_note_seq-ddic.
+  ls_note-note_no = uv_note_no.
+  ls_note-obj_check = lcl_processor=>gc_obj_type-field.
+  ls_note-objname = uv_tabname.
+  ls_note-objname2 = uv_fieldname.
+  ls_note-repid = uv_repid.
+
+  APPEND ls_note TO ct_notes.
+
+ENDFORM.                    "add_ddic_note_field
+
+*&---------------------------------------------------------------------*
+*&      Form  add_ddic_note_rept
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->UV_NOTE_NO   text
+*      -->UV_PROGNAME  text
+*      -->UV_LANGU     text
+*      -->UV_ID        text
+*      -->UV_KEY       text
+*      -->UV_REPID     text
+*      -->CT_NOTES     text
+*----------------------------------------------------------------------*
+FORM add_ddic_note_rept
+  USING
+    uv_note_no   TYPE string
+    uv_progname  TYPE string
+    uv_langu     TYPE string
+    uv_id        TYPE string
+    uv_key       TYPE string
+    uv_repid     TYPE string
+  CHANGING ct_notes TYPE lcl_processor=>tt_note.
+
+  DATA ls_note TYPE lcl_processor=>t_note.
+
+  ls_note-note_seq = lcl_processor=>gc_note_seq-ddic.
+  ls_note-note_no = uv_note_no.
+  ls_note-obj_check = lcl_processor=>gc_obj_type-prog_text.
+  ls_note-objname = uv_progname.
+  ls_note-objname2 = uv_langu.
+  ls_note-objname3 = uv_id.
+  ls_note-objname4 = uv_key.
+  ls_note-repid = uv_repid.
+
+  APPEND ls_note TO ct_notes.
+
+ENDFORM.                    "add_ddic_note_rept
+
+*&---------------------------------------------------------------------*
+*&      Form  add_ddic_note_message
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->UV_NOTE_NO text
+*      -->UV_MSGID   text
+*      -->UV_MSGNO   text
+*      -->UV_LANGU   text
+*      -->UV_TEXT    text
+*      -->UV_REPID   text
+*      -->CT_NOTES   text
+*----------------------------------------------------------------------*
+FORM add_ddic_note_message
+  USING
+    uv_note_no   TYPE string
+    uv_msgid     TYPE string
+    uv_msgno     TYPE string
+    uv_langu     TYPE string
+    uv_text       TYPE string
+    uv_repid     TYPE string
+  CHANGING ct_notes TYPE lcl_processor=>tt_note.
+
+  DATA ls_note TYPE lcl_processor=>t_note.
+
+  ls_note-note_seq = lcl_processor=>gc_note_seq-ddic.
+  ls_note-note_no = uv_note_no.
+  ls_note-obj_check = lcl_processor=>gc_obj_type-message.
+  ls_note-objname = uv_msgid.
+  ls_note-objname2 = uv_msgno.
+  ls_note-objname3 = uv_langu.
+  ls_note-objname4 = uv_text.
+  ls_note-repid = uv_repid.
+
+  APPEND ls_note TO ct_notes.
+
+ENDFORM.                    "add_ddic_note_rept
+
+*&---------------------------------------------------------------------*
+*&      Form  add_ddic_note_tabu
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->UV_NOTE_NO text
+*      -->UV_TABNAME text
+*      -->UV_WHERE   text
+*      -->UV_COUNT   text
+*      -->UV_REPID   text
+*      -->CT_NOTES   text
+*----------------------------------------------------------------------*
+FORM add_ddic_note_tabu
+  USING
+    uv_note_no   TYPE string
+    uv_tabname   TYPE string
+    uv_where    TYPE string
+    uv_count     TYPE string
+    uv_repid     TYPE string
+  CHANGING ct_notes TYPE lcl_processor=>tt_note.
+
+  DATA ls_note TYPE lcl_processor=>t_note.
+
+  ls_note-note_seq = lcl_processor=>gc_note_seq-ddic.
+  ls_note-note_no = uv_note_no.
+  ls_note-obj_check = lcl_processor=>gc_obj_type-tabu.
+  ls_note-objname = uv_tabname.
+  ls_note-objname2 = uv_where.
+  ls_note-objname3 = uv_count.
+  ls_note-repid = uv_repid.
+
+  APPEND ls_note TO ct_notes.
+
+ENDFORM.                    "add_ddic_note_tabu
+*&---------------------------------------------------------------------*
+*&      Form  add_business_func
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->UV_BF      text
+*      -->UV_CLASS   text
+*      -->UV_METHOD  text
+*      -->CT_NOTES   text
+*----------------------------------------------------------------------*
+FORM add_business_func
+  USING
+    uv_bf       TYPE string
+  CHANGING ct_notes TYPE lcl_processor=>tt_note.
+
+  DATA ls_note TYPE lcl_processor=>t_note.
+
+  ls_note-note_seq = lcl_processor=>gc_note_seq-business_func.
+  ls_note-obj_check = lcl_processor=>gc_obj_type-business_func.
+  ls_note-objname = uv_bf.
+
+
+  APPEND ls_note TO ct_notes.
+
+ENDFORM.                    "add_business_func
+
+
+
+
+*==============================================================================
+*==============================================================================
+
+SELECTION-SCREEN BEGIN OF BLOCK block WITH FRAME.
+  SELECTION-SCREEN COMMENT /1(50) vers_no.
+  SELECTION-SCREEN COMMENT /1(50) vers_dt.
+  SELECTION-SCREEN ULINE /1(50).
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS p_snote TYPE abap_bool AS CHECKBOX DEFAULT abap_true.
+    SELECTION-SCREEN COMMENT 12(79) txt_snot FOR FIELD p_snote.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS p_prereq TYPE abap_bool AS CHECKBOX DEFAULT abap_true.
+    SELECTION-SCREEN COMMENT 12(79) txt_pre FOR FIELD p_prereq.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS p_impl TYPE abap_bool AS CHECKBOX DEFAULT abap_true.
+    SELECTION-SCREEN COMMENT 12(79) txt_impl FOR FIELD p_impl.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN ULINE /1(50).
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS p_skip TYPE abap_bool AS CHECKBOX DEFAULT abap_true.
+    SELECTION-SCREEN COMMENT 12(79) txt_skip FOR FIELD p_skip.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS p_help TYPE abap_bool AS CHECKBOX.
+    SELECTION-SCREEN COMMENT 12(79) txt_help FOR FIELD p_help.
+  SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN END OF BLOCK block.
+
+AT SELECTION-SCREEN OUTPUT.
+
+  CONCATENATE:
+    'Report version: '
+    gc_version
+    INTO vers_no RESPECTING BLANKS.
+  CONCATENATE:
+    'From: '
+    gc_version_date+6(2)
+    '.'
+    gc_version_date+4(2)
+    '.'
+    gc_version_date+0(4)
+    INTO vers_dt RESPECTING BLANKS.
+
+  txt_snot = 'SNOTE Notes'.
+  txt_pre  = 'Recommended notes for PIX'.
+  txt_impl = 'PIX Notes Implementation'.
+  txt_skip = 'Skip not relevant notes (Cannot be implemented/Obsolete)'.
+  txt_help = 'Show Implementation Status help'.
+
+*==============================================================================
+
+START-OF-SELECTION.
+
+  DATA:
+    ls_note           TYPE lcl_processor=>t_note,
+    lt_notes          TYPE lcl_processor=>tt_note,
+    lo_processor      TYPE REF TO lcl_processor,
+    lv_note_disp_lvl  TYPE i,
+    ls_cvers          TYPE cvers.
+
+  CREATE OBJECT lo_processor
+    EXPORTING iv_version  = gc_version
+              iv_date     = gc_version_date.
+
+*==============================================================================
+
+* SNOTE Notes to be implemented
+  IF p_snote EQ abap_true.
+    CLEAR ls_note.
+    ls_note-deimpl = abap_false.
+    ls_note-note_seq = lcl_processor=>gc_note_seq-snote.
+
+    ls_cvers-component = 'SAP_BASIS'.
+    ls_cvers-release = '731'.
+    CLEAR: ls_note-cvers_min, ls_note-cvers_max.
+    ls_note-note_no = '1668882'. ls_note-note_vr = '036'. APPEND ls_cvers TO ls_note-cvers_min. APPEND ls_note TO lt_notes.
+    ls_cvers-release = '730'.
+    CLEAR: ls_note-cvers_min, ls_note-cvers_max.
+    ls_note-note_no = '0875986'. ls_note-note_vr = '121'. APPEND ls_cvers TO ls_note-cvers_max. APPEND ls_note TO lt_notes.
+    CLEAR: ls_note-cvers_min, ls_note-cvers_max.
+
+    ls_note-note_no = '2840923'. ls_note-note_vr = '008'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '2869143'. ls_note-note_vr = '013'. APPEND ls_note TO lt_notes.
+  ENDIF.
+
+* Recommended prerequisite notes to be implemented
+  IF p_prereq EQ abap_true.
+
+    CLEAR ls_note.
+    ls_note-deimpl   = abap_false.
+    ls_note-note_seq = lcl_processor=>gc_note_seq-prereq.
+
+    ls_note-note_no = '2565152'. ls_note-note_vr = '05'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '2557831'. ls_note-note_vr = '06'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '2554550'. ls_note-note_vr = '07'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '2796429'. ls_note-note_vr = '03'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '2800623'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '1902269'. ls_note-note_vr = '02'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '2653998'. ls_note-note_vr = '05'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '2377212'. ls_note-note_vr = '05'. APPEND ls_note TO lt_notes.
+
+  ENDIF.
+
+* PIX Notes to be implemented
+  IF p_impl EQ abap_true.
+
+    CLEAR ls_note.
+    ls_note-deimpl = abap_false.
+    ls_note-note_seq = lcl_processor=>gc_note_seq-pix.
+
+    ls_note-note_no = '3040094'. ls_note-note_vr = '02'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3033649'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3044012'. ls_note-note_vr = '04'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3081945'. ls_note-note_vr = '02'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3023237'. ls_note-note_vr = '10'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3043409'. ls_note-note_vr = '13'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3101402'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3123737'. ls_note-note_vr = '02'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3117278'. ls_note-note_vr = '02'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3107495'. ls_note-note_vr = '02'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3125614'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3123344'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3141404'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3146431'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3136873'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3139516'. ls_note-note_vr = '04'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3150234'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3125813'. ls_note-note_vr = '02'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3166463'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3189905'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+    ls_note-note_no = '3293857'. ls_note-note_vr = '01'. APPEND ls_note TO lt_notes.
+
+  ENDIF.
+
+* Set display level
+  IF p_skip EQ abap_true.
+    lv_note_disp_lvl = 0.
+  ELSE.
+    lv_note_disp_lvl = 1.
+  ENDIF.
+
+  lo_processor->process( it_notes           = lt_notes
+                         iv_note_disp_lvl   = lv_note_disp_lvl
+                         iv_note_disp_help  = p_help
+                       ).
